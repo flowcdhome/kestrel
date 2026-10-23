@@ -93,7 +93,8 @@ def search_main(argv):
     p.add_argument("-V", "--version", action="version", version=f"kestrel {__version__}")
     p.add_argument("--variants", action="store_true", help="also try variants (john doe -> johndoe, john.doe, jdoe...)")
     p.add_argument("--cat", action="append", help="only this category (repeatable)")
-    p.add_argument("--top", type=int, help="only the N most popular sites (ranked sites first)")
+    p.add_argument("--top", type=int, help="only the N most popular sites (default 500)")
+    p.add_argument("--all-sites", action="store_true", help="search every enabled site (slow)")
     p.add_argument("--min-confidence", type=int, default=40, help="hide hits below this score (default 40)")
     p.add_argument("--details", action="store_true", help="show profile title/description")
     p.add_argument("--proxy", help="e.g. socks5://127.0.0.1:1080 or http://host:port")
@@ -111,8 +112,8 @@ def search_main(argv):
     if a.tor:
         a.proxy = "socks5://127.0.0.1:9050"
     sites = load_sites({c.lower() for c in a.cat} if a.cat else None)
-    if a.top:
-        sites = sorted(sites, key=lambda s: s.get('rank') or 10**9)[:a.top]
+    if not a.all_sites:
+        sites = sorted(sites, key=lambda s: s.get('rank') or 10**9)[:a.top or 500]
     if not sites:
         return console.print("[red]no sites loaded[/] (try: kestrel import-wmn, or check --cat)")
     nicks = []
@@ -169,11 +170,14 @@ async def run_verify(sites, a):
 def verify_main(argv):
     p = argparse.ArgumentParser(prog="kestrel verify", description="Self-test the site database")
     p.add_argument("--apply", action="store_true", help="disable broken sites (writes ~/.config/kestrel/disabled.txt)")
+    p.add_argument("--top", type=int, help="verify only the N most popular sites")
     p.add_argument("--proxy")
     p.add_argument("--timeout", type=float, default=10.0)
     p.add_argument("--concurrency", type=int, default=40)
     a = p.parse_args(argv)
     sites = load_sites(use_disabled=False)
+    if a.top:
+        sites = sorted(sites, key=lambda s: s.get('rank') or 10**9)[:a.top]
     console.print(f"[bold]verifying {len(sites)} sites[/] (known account must be found, random nick must not)")
     res = asyncio.run(run_verify(sites, a))
     cnt = Counter(r[1] for r in res)

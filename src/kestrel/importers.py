@@ -5,7 +5,9 @@ import urllib.request
 from .sites import DATA, import_wmn
 
 SRC = {
-    "sherlock": "https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock/resources/data.json",
+    "sherlock": ["https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock_project/resources/data.json",
+                 "https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock/resources/data.json",
+                 "https://raw.githubusercontent.com/sherlock-project/sherlock/main/sherlock_project/resources/data.json"],
     "maigret": "https://raw.githubusercontent.com/soxoj/maigret/main/maigret/resources/data.json",
 }
 
@@ -22,7 +24,15 @@ def _save(name, sites):
 
 
 def import_sherlock(nsfw=False):
-    data = _get(SRC["sherlock"])
+    data, err = None, None
+    for u in SRC["sherlock"]:
+        try:
+            data = _get(u)
+            break
+        except Exception as e:
+            err = e
+    if data is None:
+        raise err
     data.pop("$schema", None)
     out = []
     for name, s in data.items():
