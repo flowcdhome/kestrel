@@ -1,8 +1,10 @@
 from __future__ import annotations
 import argparse
 import asyncio
+import json
 import random
 import re
+from concurrent.futures import ThreadPoolExecutor
 import sys
 import time
 from collections import Counter
@@ -14,7 +16,7 @@ from rich.table import Table
 
 from . import __version__, report
 from .engine import Engine, rand_nick
-from .sites import CONF, import_wmn, load_sites
+from .sites import CACHE, CONF, import_wmn, load_sites
 from .importers import import_all
 
 console = Console()
@@ -45,6 +47,7 @@ def progress():
 
 
 async def run_search(nicks, sites, a):
+    asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(256))
     eng = Engine(proxy=a.proxy, concurrency=a.concurrency, timeout=a.timeout, use_cache=not a.no_cache)
     out = {}
     try:
@@ -139,62 +142,91 @@ def search_main(argv):
             console.print(f"saved {name}: {path}")
 
 
+VERIFY_LOG = CACHE / "verify.jsonl"
+
+
 async def run_verify(sites, a):
+    asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(256))
     eng = Engine(proxy=a.proxy, concurrency=a.concurrency, timeout=a.timeout, use_cache=False)
+    CACHE.mkdir(parents=True, exist_ok=True)
+    if a.fresh:
+        VERIFY_LOG.unlink(missing_ok=True)
+    done = {}
+    if VERIFY_LOG.exists():
+        for line in VERIFY_LOG.read_text(encoding="utf-8").splitlines():
+            try:
+                d = json.loads(line)
+                done[d["name"]] = d
+            except Exception:
+                pass
+    todo = [s for s in sites if s["name"] not in done]
+    if done:
+        console.print(f"[dim]resuming: {len(done)} already checked, {len(todo)} left (--fresh to start over)[/]")
+    log = open(VERIFY_LOG, "a", encoding="utf-8")
 
     async def one(s):
         known = s.get("known") or []
-        if not known:
-            return s["name"], "no-known", ""
-        hit, miss = await asyncio.gather(eng.check(s, known[0]), eng.check(s, rand_nick()))
+        miss = await eng.check(s, rand_nick())
         if miss["state"] == "found":
-            return s["name"], "false-positive", f"random nick looks found ({'; '.join(miss['reasons'])})"
-        if hit["state"] != "found":
-            return s["name"], "misses-real", f"known '{known[0]}' -> {hit['state']} ({'; '.join(hit['reasons'])})"
-        return s["name"], ("ok" if miss["state"] == "missing" else "weak"), ""
+            return "false-positive", f"random nick looks found ({'; '.join(miss['reasons'])})"
+        if not known:
+            return "no-known", ""
+        hit = await eng.check(s, known[0])
+        if hit["state"] == "found":
+            return ("ok" if miss["state"] == "missing" else "weak"), ""
+        detail = f"known '{known[0]}' -> {hit['state']} ({'; '.join(hit['reasons'])})"
+        return ("misses-real" if hit["state"] == "missing" else "unverifiable"), detail
 
     try:
         with progress() as prog:
-            task = prog.add_task("verifying", total=len(sites))
+            task = prog.add_task("verifying", total=len(todo))
 
             async def wrapped(s):
                 try:
-                    return await one(s)
-                finally:
-                    prog.advance(task)
-            return await asyncio.gather(*(wrapped(s) for s in sites))
+                    kind, detail = await one(s)
+                except Exception as e:
+                    kind, detail = "unverifiable", type(e).__name__
+                d = {"name": s["name"], "kind": kind, "detail": detail}
+                done[s["name"]] = d
+                log.write(json.dumps(d) + "\n")
+                log.flush()
+                prog.advance(task)
+            await asyncio.gather(*(wrapped(s) for s in todo))
     finally:
+        log.close()
         await eng.close()
+    return [(done[s["name"]]["name"], done[s["name"]]["kind"], done[s["name"]]["detail"])
+            for s in sites if s["name"] in done]
 
 
 def verify_main(argv):
     p = argparse.ArgumentParser(prog="kestrel verify", description="Self-test the site database")
     p.add_argument("--apply", action="store_true", help="disable broken sites (writes ~/.config/kestrel/disabled.txt)")
+    p.add_argument("--fresh", action="store_true", help="ignore saved progress and start over")
     p.add_argument("--top", type=int, help="verify only the N most popular sites")
     p.add_argument("--proxy")
-    p.add_argument("--timeout", type=float, default=10.0)
-    p.add_argument("--concurrency", type=int, default=40)
+    p.add_argument("--timeout", type=float, default=8.0)
+    p.add_argument("--concurrency", type=int, default=60)
     a = p.parse_args(argv)
     sites = load_sites(use_disabled=False)
     random.shuffle(sites)
     if a.top:
-        sites = sorted(sites, key=lambda s: s.get('rank') or 10**9)[:a.top]
-    console.print(f"[bold]verifying {len(sites)} sites[/] (known account must be found, random nick must not)")
+        sites = sorted(sites, key=lambda s: s.get("rank") or 10**9)[:a.top]
+    console.print(f"[bold]verifying {len(sites)} sites[/] (progress is saved, Ctrl+C is safe)")
     res = asyncio.run(run_verify(sites, a))
     cnt = Counter(r[1] for r in res)
-    console.print(f"ok: [green]{cnt['ok']}[/] | weak (random nick unclear): {cnt['weak']} | "
-                  f"no known account: {cnt['no-known']} | [red]false positives: {cnt['false-positive']}[/] | "
-                  f"[red]misses real profile: {cnt['misses-real']}[/]")
+    console.print(f"ok: [green]{cnt['ok']}[/] | weak: {cnt['weak']} | no known account: {cnt['no-known']} | "
+                  f"unverifiable (blocked/unclear, kept): {cnt['unverifiable']} | "
+                  f"[red]false positives: {cnt['false-positive']}[/] | [red]misses real profile: {cnt['misses-real']}[/]")
     bad = [r for r in res if r[1] in ("false-positive", "misses-real")]
     if bad:
-        t = Table(title="Problem sites")
+        t = Table(title="Broken sites (will be disabled with --apply)")
         t.add_column("Site")
         t.add_column("Problem")
         t.add_column("Detail", overflow="fold")
-        for name, kind, detail in sorted(bad):
+        for name, kind, detail in sorted(bad)[:60]:
             t.add_row(escape(name), kind, escape(detail))
         console.print(t)
-        console.print("[dim]A 'known' account may also have been deleted. Use --apply to skip these sites.[/]")
     if a.apply:
         CONF.mkdir(parents=True, exist_ok=True)
         (CONF / "disabled.txt").write_text("\n".join(sorted(r[0] for r in bad)) + "\n", encoding="utf-8")

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kestrel-osint"
-version = "0.2.2"
+version = "0.2.3"
 description = "Async username OSINT with baseline-differential detection and self-verifying site database"
 readme = "README.md"
 requires-python = ">=3.10"
