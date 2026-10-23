@@ -15,7 +15,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn
 from rich.table import Table
 
 from . import __version__, report
-from .engine import Engine, rand_nick
+from .engine import Engine, rand_nick, url_for
 from .sites import CACHE, CONF, import_wmn, load_sites
 from .importers import import_all
 
@@ -147,7 +147,8 @@ VERIFY_LOG = CACHE / "verify.jsonl"
 
 async def run_verify(sites, a):
     asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(256))
-    eng = Engine(proxy=a.proxy, concurrency=a.concurrency, timeout=a.timeout, use_cache=False)
+    eng = Engine(proxy=a.proxy, concurrency=a.concurrency * 2, timeout=a.timeout, use_cache=False)
+    eng.tries = 1
     CACHE.mkdir(parents=True, exist_ok=True)
     if a.fresh:
         VERIFY_LOG.unlink(missing_ok=True)
@@ -166,6 +167,8 @@ async def run_verify(sites, a):
 
     async def one(s):
         known = s.get("known") or []
+        if await eng.get(url_for(s, rand_nick()), s.get('redirects', True)) is None:
+            return 'unverifiable', 'no response'
         miss = await eng.check(s, rand_nick())
         if miss["state"] == "found":
             return "false-positive", f"random nick looks found ({'; '.join(miss['reasons'])})"
@@ -191,7 +194,12 @@ async def run_verify(sites, a):
                 log.write(json.dumps(d) + "\n")
                 log.flush()
                 prog.advance(task)
-            await asyncio.gather(*(wrapped(s) for s in todo))
+            it = iter(todo)
+
+            async def worker():
+                for s in it:
+                    await wrapped(s)
+            await asyncio.gather(*(worker() for _ in range(a.concurrency)))
     finally:
         log.close()
         await eng.close()

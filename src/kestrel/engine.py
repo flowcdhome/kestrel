@@ -188,6 +188,7 @@ class Engine:
         self.sem = asyncio.Semaphore(concurrency)
         self.per_host = per_host
         self.timeout = timeout
+        self.tries = 2
         self.hosts: dict[str, asyncio.Semaphore] = {}
         self.use_cache = use_cache
         try:
@@ -199,7 +200,7 @@ class Engine:
         host = urlsplit(url).netloc
         hs = self.hosts.setdefault(host, asyncio.Semaphore(self.per_host))
         async with hs, self.sem:
-            for _ in range(2):
+            for _ in range(self.tries):
                 try:
                     r = await asyncio.wait_for(fetch(self.client, url, follow), self.timeout * 1.5)
                 except asyncio.TimeoutError:
