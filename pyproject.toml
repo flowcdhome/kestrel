@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kestrel-osint"
+version = "0.1.0"
+description = "Async username OSINT with baseline-differential detection and self-verifying site database"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["httpx[socks]>=0.27", "rich>=13.0"]
+
+[project.scripts]
+kestrel = "kestrel.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
