@@ -187,6 +187,7 @@ class Engine:
             limits=httpx.Limits(max_connections=concurrency * 2, max_keepalive_connections=20))
         self.sem = asyncio.Semaphore(concurrency)
         self.per_host = per_host
+        self.timeout = timeout
         self.hosts: dict[str, asyncio.Semaphore] = {}
         self.use_cache = use_cache
         try:
@@ -197,9 +198,12 @@ class Engine:
     async def get(self, url: str, follow: bool = True):
         host = urlsplit(url).netloc
         hs = self.hosts.setdefault(host, asyncio.Semaphore(self.per_host))
-        async with self.sem, hs:
+        async with hs, self.sem:
             for _ in range(2):
-                r = await fetch(self.client, url, follow)
+                try:
+                    r = await asyncio.wait_for(fetch(self.client, url, follow), self.timeout * 1.5)
+                except asyncio.TimeoutError:
+                    return None
                 if r:
                     return r
         return None

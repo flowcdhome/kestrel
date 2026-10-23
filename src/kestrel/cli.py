@@ -1,6 +1,7 @@
 from __future__ import annotations
 import argparse
 import asyncio
+import random
 import re
 import sys
 import time
@@ -145,8 +146,7 @@ async def run_verify(sites, a):
         known = s.get("known") or []
         if not known:
             return s["name"], "no-known", ""
-        hit = await eng.check(s, known[0])
-        miss = await eng.check(s, rand_nick())
+        hit, miss = await asyncio.gather(eng.check(s, known[0]), eng.check(s, rand_nick()))
         if miss["state"] == "found":
             return s["name"], "false-positive", f"random nick looks found ({'; '.join(miss['reasons'])})"
         if hit["state"] != "found":
@@ -176,6 +176,7 @@ def verify_main(argv):
     p.add_argument("--concurrency", type=int, default=40)
     a = p.parse_args(argv)
     sites = load_sites(use_disabled=False)
+    random.shuffle(sites)
     if a.top:
         sites = sorted(sites, key=lambda s: s.get('rank') or 10**9)[:a.top]
     console.print(f"[bold]verifying {len(sites)} sites[/] (known account must be found, random nick must not)")
