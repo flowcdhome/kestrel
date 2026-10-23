@@ -97,7 +97,7 @@ def judge(site: dict, nick: str, r, base):
     if fp["blocked"]:
         return "unknown", 0, [f"blocked (HTTP {status})"], {}
     mt = site.get("missing_text")
-    if mt and mt in text:
+    if mt and any(m in text for m in ([mt] if isinstance(mt, str) else mt)):
         return "missing", 0, ["missing_text matched"], {}
     ms, ex, et = site.get("missing_status"), site.get("exists_status"), site.get("exists_text")
     if ms is not None and status == ms and status != ex:
@@ -217,6 +217,14 @@ class Engine:
         return fps
 
     async def check(self, site: dict, nick: str) -> dict:
+        rx = site.get("regex")
+        if rx:
+            try:
+                if not re.fullmatch(rx, nick):
+                    return {"site": site["name"], "cat": site.get("cat", ""), "url": url_for(site, nick, "show_url"),
+                            "state": "missing", "confidence": 0, "reasons": ["nick format not valid here"], "meta": {}}
+            except re.error:
+                pass
         try:
             r, base = await asyncio.gather(
                 self.get(url_for(site, nick), site.get("redirects", True)), self.baseline(site))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import os
+import re
 import urllib.request
 from pathlib import Path
 
@@ -9,6 +10,7 @@ DATA = Path(os.environ.get("XDG_DATA_HOME", HOME / ".local/share")) / "kestrel"
 CONF = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "kestrel"
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", HOME / ".cache")) / "kestrel"
 WMN_URL = "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json"
+PRI = {"sherlock": 0, "wmn": 1, "maigret": 2}   # on duplicates the earlier source wins
 
 # Site schema: name, url ("{}" = nickname), cat, known (real accounts for `verify`),
 # optional: show_url, redirects (false = do not follow), exists_text/exists_status,
@@ -41,7 +43,7 @@ def disabled() -> set[str]:
 
 def load_sites(cats: set[str] | None = None, use_disabled: bool = True) -> list[dict]:
     pool: list[dict] = []
-    files = [*sorted((CONF / "sites").glob("*.json")), None, *sorted((DATA / "sites").glob("*.json"))]
+    files = [*sorted((CONF / "sites").glob("*.json")), None, *sorted((DATA / "sites").glob("*.json"), key=lambda f: PRI.get(f.stem, 9))]
     for f in files:
         if f is None:
             pool += CORE
@@ -52,15 +54,17 @@ def load_sites(cats: set[str] | None = None, use_disabled: bool = True) -> list[
         except Exception:
             continue
     off = disabled() if use_disabled else set()
-    seen, out = set(), []
+    seen, seen_u, out = set(), set(), []
     for s in pool:
         name = s.get("name")
         if not name or "{}" not in s.get("url", ""):
             continue
         k = name.lower()
-        if k in seen or k in off:
+        uk = re.sub(r"^https?://(www\.)?", "", s["url"].lower()).rstrip("/")
+        if k in seen or uk in seen_u or k in off:
             continue
         seen.add(k)
+        seen_u.add(uk)
         if cats and s.get("cat", "").lower() not in cats:
             continue
         out.append(s)

@@ -42,7 +42,7 @@ Site-specific signatures are optional hints on top, not a requirement, so adding
 sudo pacman -S --needed git python python-pipx
 git clone https://github.com/flowcdhome/kestrel.git
 cd kestrel && ./install.sh
-kestrel import-wmn           # 600+ sites (once)
+kestrel import-all           # 2000+ sites from Sherlock, WhatsMyName, Maigret (once)
 kestrel verify --apply       # drop broken sites (once, repeat now and then)
 kestrel somenick
 ```
@@ -99,3 +99,7 @@ Idea inspired by [Sherlock](https://github.com/sherlock-project/sherlock); no co
 ## 📄 License
 
 MIT, see [LICENSE](LICENSE).
+
+## 🗃️ Site databases
+
+`kestrel import-all` downloads, on your machine, site lists from [Sherlock](https://github.com/sherlock-project/sherlock) (MIT), [Maigret](https://github.com/soxoj/maigret) (MIT) and [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) (CC BY-SA 4.0), converts them to Kestrel's format and merges duplicates. They are not bundled in this repository. Use `--top N` for a quick search over the most popular sites and `kestrel verify --apply` to drop dead ones.

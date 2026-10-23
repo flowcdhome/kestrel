@@ -14,6 +14,7 @@ from rich.table import Table
 from . import __version__, report
 from .engine import Engine, rand_nick
 from .sites import CONF, import_wmn, load_sites
+from .importers import import_all
 
 console = Console()
 SUBS = {"verify", "import-wmn", "sites"}
@@ -92,6 +93,7 @@ def search_main(argv):
     p.add_argument("-V", "--version", action="version", version=f"kestrel {__version__}")
     p.add_argument("--variants", action="store_true", help="also try variants (john doe -> johndoe, john.doe, jdoe...)")
     p.add_argument("--cat", action="append", help="only this category (repeatable)")
+    p.add_argument("--top", type=int, help="only the N most popular sites (ranked sites first)")
     p.add_argument("--min-confidence", type=int, default=40, help="hide hits below this score (default 40)")
     p.add_argument("--details", action="store_true", help="show profile title/description")
     p.add_argument("--proxy", help="e.g. socks5://127.0.0.1:1080 or http://host:port")
@@ -109,6 +111,8 @@ def search_main(argv):
     if a.tor:
         a.proxy = "socks5://127.0.0.1:9050"
     sites = load_sites({c.lower() for c in a.cat} if a.cat else None)
+    if a.top:
+        sites = sorted(sites, key=lambda s: s.get('rank') or 10**9)[:a.top]
     if not sites:
         return console.print("[red]no sites loaded[/] (try: kestrel import-wmn, or check --cat)")
     nicks = []
@@ -202,6 +206,10 @@ def main():
             p.add_argument("--nsfw", action="store_true", help="include adult sites")
             a = p.parse_args(argv[1:])
             console.print(f"[green]imported {import_wmn(a.nsfw)} sites[/] (WhatsMyName, CC BY-SA 4.0). Next: kestrel verify --apply")
+        elif argv and argv[0] == "import-all":
+            p = argparse.ArgumentParser(prog="kestrel import-all", description="Download Sherlock, WhatsMyName and Maigret site lists")
+            p.add_argument("--nsfw", action="store_true", help="include adult sites")
+            import_all(console, p.parse_args(argv[1:]).nsfw)
         elif argv and argv[0] == "sites":
             sites = load_sites()
             c = Counter(s.get("cat", "") or "other" for s in sites)

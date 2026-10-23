@@ -42,7 +42,7 @@ Kestrel работает иначе:
 sudo pacman -S --needed git python python-pipx
 git clone https://github.com/flowcdhome/kestrel.git
 cd kestrel && ./install.sh
-kestrel import-wmn           # 600+ сайтов (один раз)
+kestrel import-all           # 2000+ сайтов из Sherlock, WhatsMyName, Maigret (один раз)
 kestrel verify --apply       # отключить сломанные сайты (один раз, потом время от времени)
 kestrel somenick
 ```
@@ -99,3 +99,7 @@ kestrel sites                         # что включено
 ## 📄 Лицензия
 
 MIT, см. [LICENSE](LICENSE).
+
+## 🗃️ Базы сайтов
+
+`kestrel import-all` скачивает на твой компьютер списки сайтов из [Sherlock](https://github.com/sherlock-project/sherlock) (MIT), [Maigret](https://github.com/soxoj/maigret) (MIT) и [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) (CC BY-SA 4.0), приводит их к формату Kestrel и объединяет дубли. В репозиторий они не входят. `--top N` даёт быстрый поиск по самым популярным сайтам, `kestrel verify --apply` отключает мёртвые.
